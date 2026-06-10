@@ -1,23 +1,59 @@
 # pdf-triage
 
-Small macOS Folder Action workflow for moving recognized research PDFs from
-`~/Downloads` into `~/Documents/Papers`.
+<p align="center">
+  <strong>Local-first macOS PDF triage for research papers.</strong><br>
+  Keep Downloads clean, build a YAML paper manifest, and browse it locally.
+</p>
 
-Recognized PDFs are moved to:
+<p align="center">
+  <a href="#features"><code>features</code></a>
+  <a href="#library-layout"><code>library layout</code></a>
+  <a href="#install-the-cli"><code>install</code></a>
+  <a href="#manifest-viewer"><code>viewer</code></a>
+  <a href="LICENSE"><code>MIT</code></a>
+</p>
+
+`pdf-triage` keeps `~/Downloads` clean by moving recognized research PDFs into a
+paper library, extracting lightweight bibliographic metadata, and exposing a
+compact local manifest viewer for search, sorting, tags, and opening PDFs in
+Skim, Preview, the browser, or the system default app.
+
+It is intentionally small:
+
+- No cloud service or account.
+- No LLM dependency.
+- No database server.
+- Plain files under `~/Documents/Papers`.
+- A single YAML manifest you can inspect and edit.
+
+## Features
+
+- Watch `~/Downloads` with macOS Folder Actions.
+- Move recognized arXiv and journal PDFs automatically.
+- Leave unrecognized or non-paper PDFs untouched.
+- Extract DOI/arXiv IDs, title, and authors using local metadata and
+  `pdftotext` heuristics.
+- Store all records in `~/Documents/Papers/manifest.yaml`.
+- Browse the manifest in a compact local web viewer.
+- Search, sort, tag papers, and open PDFs from the viewer.
+- Run the viewer on demand, in the background, or as a login-time LaunchAgent.
+
+## Library Layout
+
+Recognized PDFs are moved into:
 
 - `~/Documents/Papers/arxiv`
 - `~/Documents/Papers/journal`
 
-Unrecognized PDFs are left untouched. Recognized PDFs are registered in the
-central YAML manifest:
+The central manifest is:
 
 ```text
 ~/Documents/Papers/manifest.yaml
 ```
 
-The manifest stores file paths, source URL metadata when macOS provides it,
-DOI/arXiv identifiers, extracted title/authors, triage category, and optional
-user tags. Each triage run appends one JSON line to `logs/pdf_triage.log`.
+It stores file paths, source URL metadata when macOS provides it, DOI/arXiv
+identifiers, extracted title/authors, triage category, and optional user tags.
+Each triage run appends one JSON line to `logs/pdf_triage.log`.
 
 ## Requirements
 
