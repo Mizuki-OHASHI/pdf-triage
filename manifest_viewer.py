@@ -1,4 +1,4 @@
-#!/usr/bin/env /Users/m_ohashi/miniforge3/envs/py311/bin/python
+#!/usr/bin/env python3
 
 from __future__ import annotations
 
@@ -155,6 +155,7 @@ def launchctl(args: list[str], check: bool = False) -> subprocess.CompletedProce
 
 def launch_agent_program_args(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]:
     return [
+        sys.executable,
         str(Path(__file__).resolve()),
         "--papers-root",
         str(paths["papers_root"]),

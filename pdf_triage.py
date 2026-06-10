@@ -1,4 +1,4 @@
-#!/usr/bin/env /Users/m_ohashi/miniforge3/envs/py311/bin/python
+#!/usr/bin/env python3
 
 from __future__ import annotations
 

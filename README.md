@@ -62,17 +62,18 @@ Each triage run appends one JSON line to `logs/pdf_triage.log`.
 ## Requirements
 
 - macOS with Folder Actions
-- Python matching the shebang in `pdf_triage.py`
+- Python 3.10+ for the generated local CLI wrappers
 - PyYAML in that Python environment
 - Poppler tools (`pdftotext`, `pdfinfo`)
 
-The checked-in script currently uses:
+The checked-in scripts use a portable shebang:
 
 ```text
-#!/usr/bin/env /Users/m_ohashi/miniforge3/envs/py311/bin/python
+#!/usr/bin/env python3
 ```
 
-Edit that first line if your Python environment lives elsewhere.
+Do not edit the checked-in shebang for each machine. Instead, install local
+wrappers with the Python environment that should run `pdf-triage`.
 
 For Poppler:
 
@@ -87,35 +88,36 @@ than an interactive terminal.
 For PyYAML:
 
 ```bash
-conda install -n py311 PyYAML
+conda install -n research PyYAML
 ```
 
 ## Install the CLI
 
-From this repository:
+From this repository, generate local wrappers under `~/.local/bin`:
 
 ```bash
-REPO="$(pwd)"
-chmod +x ./pdf_triage.py
-mkdir -p ~/.local/bin
-ln -s "$REPO/pdf_triage.py" ~/.local/bin/pdf_triage.py
+PYTHON=/path/to/python ./scripts/install_cli.sh
 ```
 
-The symlink direction matters: `~/.local/bin/pdf_triage.py` should point to the
-repository script.
+For example, with a conda environment named `research`:
+
+```bash
+PYTHON=/opt/homebrew/anaconda3/envs/research/bin/python ./scripts/install_cli.sh
+```
+
+The generated files are small wrappers named `pdf_triage.py` and
+`manifest_viewer.py`. They live outside the repository, pin the local Python
+interpreter, and execute the repository scripts. This keeps machine-specific
+environment paths out of version control while still working from macOS Folder
+Actions and LaunchAgents, where `PATH` may be narrower than an interactive
+terminal.
 
 Check it:
 
 ```bash
 ls -l ~/.local/bin/pdf_triage.py
 ~/.local/bin/pdf_triage.py --help
-```
-
-For the manifest viewer, add a second symlink:
-
-```bash
-chmod +x ./manifest_viewer.py
-ln -s "$REPO/manifest_viewer.py" ~/.local/bin/manifest_viewer.py
+~/.local/bin/manifest_viewer.py --help
 ```
 
 ## Install the Folder Action
