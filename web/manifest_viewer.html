@@ -326,6 +326,7 @@
     </main>
     <footer>
       <span id="count">0 papers</span>
+      <span id="mode"></span>
       <span id="status"></span>
     </footer>
   </div>
@@ -341,6 +342,7 @@
       selectedId: null,
       activeTagPaperId: null,
       tagInputComposing: false,
+      readOnly: false,
       sortKey: 'moved_at',
       sortDir: 'desc'
     };
@@ -355,6 +357,7 @@
     const tagInput = document.getElementById('tagInput');
     const tagSuggestions = document.getElementById('tagSuggestions');
     const count = document.getElementById('count');
+    const mode = document.getElementById('mode');
     const status = document.getElementById('status');
 
     function setStatus(text) {
@@ -394,6 +397,9 @@
 
     function render() {
       updateSortIndicators();
+      document.body.dataset.readOnly = state.readOnly ? 'true' : 'false';
+      mode.textContent = state.readOnly ? 'Read-only' : '';
+      openManifestButton.disabled = state.readOnly;
       rows.textContent = '';
       const frag = document.createDocumentFragment();
       for (const paper of state.filtered) {
@@ -455,13 +461,13 @@
       const chips = (paper.tags || []).map((tag) => `
         <span class="tag-chip" data-action="filter-tag" data-tag="${escapeAttr(tag)}" title="Add ${escapeAttr(tag)} to search">
           <button type="button" class="tag-filter" data-action="filter-tag" data-tag="${escapeAttr(tag)}" title="Add ${escapeAttr(tag)} to search">${escapeHtml(tag)}</button>
-          <button type="button" class="tag-remove" data-action="remove-tag" data-id="${escapeAttr(paper.id)}" data-tag="${escapeAttr(tag)}" title="Remove ${escapeAttr(tag)}" aria-label="Remove ${escapeAttr(tag)}">×</button>
+          ${state.readOnly ? '' : `<button type="button" class="tag-remove" data-action="remove-tag" data-id="${escapeAttr(paper.id)}" data-tag="${escapeAttr(tag)}" title="Remove ${escapeAttr(tag)}" aria-label="Remove ${escapeAttr(tag)}">×</button>`}
         </span>
       `).join('');
       return `
         <div class="tag-list">
           ${chips}
-          <button class="tag-add" data-action="add-tag" data-id="${escapeAttr(paper.id)}" title="Add tag" aria-label="Add tag">+</button>
+          ${state.readOnly ? '' : `<button class="tag-add" data-action="add-tag" data-id="${escapeAttr(paper.id)}" title="Add tag" aria-label="Add tag">+</button>`}
         </div>
       `;
     }
@@ -521,6 +527,7 @@
     }
 
     function openTagMenu(paperId, anchor) {
+      if (state.readOnly) return;
       state.activeTagPaperId = paperId;
       tagInput.value = '';
       renderTagSuggestions();
@@ -572,6 +579,10 @@
     }
 
     async function saveTags(paperId, tags) {
+      if (state.readOnly) {
+        setStatus('Read-only mode');
+        return false;
+      }
       const res = await fetch('/api/tags', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -588,6 +599,7 @@
     }
 
     async function addTag(paperId, tag) {
+      if (state.readOnly) return;
       const paper = paperById(paperId);
       if (!paper) return;
       const normalized = tag.trim().replace(/\s+/g, ' ');
@@ -602,6 +614,7 @@
     }
 
     async function removeTag(paperId, tag) {
+      if (state.readOnly) return;
       const paper = paperById(paperId);
       if (!paper) return;
       const nextTags = (paper.tags || []).filter((existing) => existing !== tag);
@@ -612,10 +625,12 @@
       const res = await fetch('/api/config');
       if (!res.ok) throw new Error('Could not load config');
       const config = await res.json();
+      state.readOnly = Boolean(config.read_only);
       viewer.value = config.viewer || 'default';
     }
 
     async function saveConfig() {
+      if (state.readOnly) return;
       const res = await fetch('/api/config', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -629,6 +644,7 @@
       const res = await fetch('/api/papers');
       if (!res.ok) throw new Error('Could not load manifest');
       const data = await res.json();
+      state.readOnly = Boolean(data.read_only);
       state.papers = data.papers || [];
       state.allTags = data.tags || [];
       if (!state.papers.some((paper) => paper.id === state.selectedId)) {
@@ -657,6 +673,10 @@
     }
 
     async function openManifest() {
+      if (state.readOnly) {
+        setStatus('Read-only mode');
+        return;
+      }
       const res = await fetch('/api/open-manifest', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},

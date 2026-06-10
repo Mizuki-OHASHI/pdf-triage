@@ -154,7 +154,7 @@ def launchctl(args: list[str], check: bool = False) -> subprocess.CompletedProce
 
 
 def launch_agent_program_args(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]:
-    return [
+    command = [
         sys.executable,
         str(Path(__file__).resolve()),
         "--papers-root",
@@ -172,6 +172,9 @@ def launch_agent_program_args(args: argparse.Namespace, paths: dict[str, Path]) 
         "--pid-file",
         str(paths["pid_file"]),
     ]
+    if args.read_only:
+        command.append("--read-only")
+    return command
 
 
 def install_launch_agent(args: argparse.Namespace, paths: dict[str, Path]) -> None:
@@ -338,11 +341,12 @@ def normalize_paper(root: Path, item: dict[str, Any]) -> dict[str, Any]:
 
 
 class ViewerState:
-    def __init__(self, papers_root: Path, manifest: Path, config: Path, default_viewer: str):
+    def __init__(self, papers_root: Path, manifest: Path, config: Path, default_viewer: str, read_only: bool = False):
         self.papers_root = papers_root
         self.manifest = manifest
         self.config = config
         self.default_viewer = default_viewer
+        self.read_only = read_only
 
     def load_manifest(self) -> dict[str, Any]:
         if not self.manifest.exists():
@@ -385,9 +389,11 @@ class ViewerState:
                     viewer = data["viewer"]
             except (OSError, json.JSONDecodeError):
                 pass
-        return {"viewer": viewer}
+        return {"viewer": viewer, "read_only": self.read_only}
 
     def save_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        if self.read_only:
+            raise PermissionError("Viewer is read-only")
         viewer = config.get("viewer")
         if viewer not in VIEWERS:
             raise ValueError(f"Unknown viewer: {viewer}")
@@ -397,6 +403,8 @@ class ViewerState:
         return payload
 
     def update_tags(self, paper_id: str, tags: list[str]) -> dict[str, Any]:
+        if self.read_only:
+            raise PermissionError("Viewer is read-only")
         normalized_tags = normalize_tags(tags)
         with manifest_lock(self.papers_root):
             data = self.load_manifest()
@@ -444,6 +452,7 @@ class ManifestHandler(BaseHTTPRequestHandler):
                         "manifest": str(self.state.manifest),
                         "updated_at": data.get("updated_at"),
                         "count": len(papers),
+                        "read_only": self.state.read_only,
                         "tags": self.state.tags(),
                         "papers": papers,
                     },
@@ -464,13 +473,22 @@ class ManifestHandler(BaseHTTPRequestHandler):
         try:
             body = self.read_json()
             if parsed.path == "/api/config":
+                if self.state.read_only:
+                    json_response(self, HTTPStatus.FORBIDDEN, {"error": "Viewer is read-only"})
+                    return
                 config = self.state.save_config(body)
                 json_response(self, HTTPStatus.OK, config)
             elif parsed.path == "/api/open":
                 self.open_pdf(body)
             elif parsed.path == "/api/open-manifest":
+                if self.state.read_only:
+                    json_response(self, HTTPStatus.FORBIDDEN, {"error": "Viewer is read-only"})
+                    return
                 self.open_manifest()
             elif parsed.path == "/api/tags":
+                if self.state.read_only:
+                    json_response(self, HTTPStatus.FORBIDDEN, {"error": "Viewer is read-only"})
+                    return
                 paper_id = str(body.get("id") or "")
                 if not paper_id:
                     raise ValueError("Missing paper id")
@@ -482,6 +500,8 @@ class ManifestHandler(BaseHTTPRequestHandler):
                 json_response(self, HTTPStatus.NOT_FOUND, {"error": "Not found"})
         except ValueError as exc:
             json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        except PermissionError as exc:
+            json_response(self, HTTPStatus.FORBIDDEN, {"error": str(exc)})
         except Exception as exc:
             json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
 
@@ -566,6 +586,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--viewer", choices=sorted(VIEWERS), default="default")
+    parser.add_argument("--read-only", action="store_true", help="disable manifest/config writes from the viewer")
     parser.add_argument("--open-browser", action="store_true", help="open the viewer URL after startup")
     parser.add_argument("--stop", action="store_true", help="stop a running viewer process or LaunchAgent")
     parser.add_argument("--restart", action="store_true", help="restart LaunchAgent if installed, otherwise start in background")
@@ -635,7 +656,7 @@ def main(argv: list[str] | None = None) -> int:
             start_background(args, paths)
         return 0
 
-    state = ViewerState(paths["papers_root"], paths["manifest"], paths["config"], args.viewer)
+    state = ViewerState(paths["papers_root"], paths["manifest"], paths["config"], args.viewer, args.read_only)
     handler = type("BoundManifestHandler", (ManifestHandler,), {"state": state})
     server = ThreadingHTTPServer((args.host, args.port), handler)
     url = f"http://{args.host}:{server.server_port}"

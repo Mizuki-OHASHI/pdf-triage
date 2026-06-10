@@ -105,6 +105,15 @@ For example, with a conda environment named `research`:
 PYTHON=/opt/homebrew/anaconda3/envs/research/bin/python ./scripts/install_cli.sh
 ```
 
+For a secondary machine that should only read an already-synced paper library,
+make the viewer wrapper read-only:
+
+```bash
+MANIFEST_VIEWER_READ_ONLY=1 \
+  PYTHON=/opt/homebrew/anaconda3/envs/research/bin/python \
+  ./scripts/install_cli.sh
+```
+
 The generated files are small wrappers named `pdf_triage.py` and
 `manifest_viewer.py`. They live outside the repository, pin the local Python
 interpreter, and execute the repository scripts. This keeps machine-specific
@@ -173,6 +182,21 @@ Expected:
 folder_actions_enabled=true; downloads_scripts=pdf_triage.scpt
 ```
 
+To keep a secondary machine from writing to the paper manifest when PDFs are
+downloaded there, disable this script for `~/Downloads`:
+
+```bash
+osascript \
+  -e 'tell application "System Events"' \
+  -e 'if exists folder action "Downloads" then tell folder action "Downloads"' \
+  -e 'if exists script "pdf_triage.scpt" then set enabled of script "pdf_triage.scpt" to false' \
+  -e 'end tell' \
+  -e 'end tell'
+```
+
+This leaves the installed `.scpt` file in place, so the auto-trigger can be
+re-enabled later without reinstalling the script.
+
 ## Debugging
 
 Watch the execution log while downloading a PDF:
@@ -232,7 +256,11 @@ manifest_viewer.py --viewer skim
 manifest_viewer.py --viewer preview
 manifest_viewer.py --viewer browser
 manifest_viewer.py --papers-root ~/Documents/Papers --port 8765
+manifest_viewer.py --read-only
 ```
+
+Read-only mode disables tag/config writes and the manifest-open endpoint from
+the viewer. Opening PDFs still works.
 
 Run it as a background process:
 
@@ -297,6 +325,26 @@ LaunchAgent logs are written to:
 ```text
 logs/manifest_viewer.launchd.out.log
 logs/manifest_viewer.launchd.err.log
+```
+
+## Multi-Machine Sync
+
+Avoid letting multiple Macs write `manifest.yaml` independently. Pick one
+machine as the writer, and make other machines read-only:
+
+- do not enable the Downloads Folder Action on reader machines
+- install the viewer wrapper with `MANIFEST_VIEWER_READ_ONLY=1`
+- sync from the writer without `--delete` unless you intentionally want local
+  files removed
+- do not sync runtime files under `.triage`
+
+Example pull from a writer host named `m5air`:
+
+```bash
+/opt/homebrew/bin/rsync -av \
+  --exclude '.triage/manifest.lock' \
+  --exclude '.triage/manifest_viewer.pid' \
+  m5air:~/Documents/Papers/ ~/Documents/Papers/
 ```
 
 ## License
