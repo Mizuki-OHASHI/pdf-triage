@@ -8,8 +8,16 @@ Recognized PDFs are moved to:
 - `~/Documents/Papers/arxiv`
 - `~/Documents/Papers/journal`
 
-Unrecognized PDFs are left untouched. Each run appends one JSON line to
-`logs/pdf_triage.log`.
+Unrecognized PDFs are left untouched. Recognized PDFs are registered in the
+central YAML manifest:
+
+```text
+~/Documents/Papers/manifest.yaml
+```
+
+The manifest stores file paths, source URL metadata when macOS provides it,
+DOI/arXiv identifiers, extracted title/authors, triage category, and optional
+user tags. Each triage run appends one JSON line to `logs/pdf_triage.log`.
 
 ## Requirements
 
@@ -146,6 +154,21 @@ Run the real move manually:
 Folder Actions only trigger when a file is added. Files already in `~/Downloads`
 must be processed manually.
 
+To refresh metadata for a PDF that is already under `~/Documents/Papers`, run:
+
+```bash
+~/.local/bin/pdf_triage.py --no-wait ~/Documents/Papers/journal/example.pdf
+```
+
+Existing manifest data that is user-owned or historical, such as `tags`,
+`file.original_path`, source metadata, and `triage.moved_at`, is preserved when
+an entry is refreshed.
+
+Metadata extraction is heuristic. It prefers usable PDF metadata, then falls
+back to the first pages via `pdftotext`. Publisher headers such as APS/PRL
+`week ending` and AIP article chrome are filtered, but unusual layouts may still
+need manual correction in `manifest.yaml`.
+
 ## Manifest Viewer
 
 Start the local viewer:
@@ -204,7 +227,8 @@ The viewer preference is persisted at:
 ```
 
 The viewer UI lives in `web/manifest_viewer.html`; the Python script only serves
-the page, manifest API, preferences API, and PDF open endpoint.
+the page, manifest API, preferences API, tag API, PDF route, and PDF/manifest
+open endpoints.
 
 Keyboard:
 
@@ -214,3 +238,25 @@ Keyboard:
 
 Search terms are OR-matched when separated by spaces. Tags are stored in each
 manifest paper entry as `tags: [...]` and are included in search.
+
+Tag behavior:
+
+- `+`: add an existing or new tag.
+- Tag name: append that tag to the search field.
+- `x`: remove that tag from the manifest entry.
+
+The tag input ignores Enter while an IME composition is active, so Japanese
+conversion confirmation should not create a tag accidentally.
+
+The toolbar's manifest button opens `manifest.yaml` with the system default app.
+
+LaunchAgent logs are written to:
+
+```text
+logs/manifest_viewer.launchd.out.log
+logs/manifest_viewer.launchd.err.log
+```
+
+## License
+
+MIT License. See `LICENSE`.
