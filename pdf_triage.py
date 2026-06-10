@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 SCRIPT_NAME = "pdf_triage.py"
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -26,6 +28,17 @@ DEFAULT_PAPERS_ROOT = Path.home() / "Documents" / "Papers"
 DEFAULT_LOG_PATH = SCRIPT_DIR / "logs" / "pdf_triage.log"
 MANIFEST_NAME = "manifest.yaml"
 SCHEMA_VERSION = 1
+TOOL_PATH = os.pathsep.join(
+    [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+        os.environ.get("PATH", ""),
+    ]
+)
 
 ARXIV_ID_RE = re.compile(
     r"(?i)(?:arxiv\s*:\s*|arxiv\.org/(?:abs|pdf)/)"
@@ -83,6 +96,10 @@ AFFILIATION_RE = re.compile(
 )
 HEADER_LINE_RE = re.compile(
     r"(?i)("
+    r"\brapid communications\b|"
+    r"\bphysical review\s+[a-z]?\s*\d+\b|"
+    r"\bj\.\s*phys\.\s*soc\.\s*jpn\.|"
+    r"\bjournal of the physical society of japan\s+\d+\b|"
     r"\bvolume\s+\d+\b|"
     r"\bvol\.\s*\d+\b|"
     r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b|"
@@ -130,16 +147,26 @@ def summarize_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_command(args: list[str], timeout: int) -> subprocess.CompletedProcess[str] | None:
+    command = [resolve_executable(args[0]), *args[1:]]
+    env = {**os.environ, "PATH": TOOL_PATH}
     try:
         return subprocess.run(
-            args,
+            command,
             capture_output=True,
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def resolve_executable(name: str) -> str:
+    if "/" in name:
+        return name
+    found = shutil.which(name, path=TOOL_PATH)
+    return found or name
 
 
 def wait_until_stable(path: Path, stable_seconds: int, timeout: int) -> bool:
@@ -350,19 +377,18 @@ def split_authors(value: str | None) -> list[str]:
     value = normalize_text(value)
     value = value.replace(" ,", ",")
     value = re.sub(r"\s+", " ", value)
-    if ";" in value:
-        parts = value.split(";")
-    elif " and " in value:
-        parts = re.split(r"\s+and\s+", value)
-    elif "," in value and value.count(",") <= 16:
-        parts = re.split(r"\s*,\s+(?=[A-Z])", value)
-    else:
-        parts = [value]
+    value = re.sub(r"(?<=[A-Za-z])\s*,?\s*\d+(?:\s*,\s*(?:\d+|[+*∗†‡]))*(?=\s+(?:and\s+)?[A-Z]|$)", ", ", value)
+    value = re.sub(r"(?<=[A-Za-z])\s*[+*∗†‡]+(?=\s+(?:and\s+)?[A-Z]|$)", ", ", value)
+    value = re.sub(r"\s+and\s+", ", ", value)
+    value = re.sub(r"\s*,\s*", ", ", value)
+    value = re.sub(r"(?:,\s*)+", ", ", value).strip(" ,")
+    parts = value.split(";") if ";" in value else value.split(",")
     authors = []
     for part in parts:
         author = normalize_text(part.strip(" ,;"))
         author = re.sub(r"[*∗†‡]+$", "", author).strip(" ,;")
-        author = re.sub(r"\s+(?:[a-z](?:\s*,\s*(?:[a-z]|\d+|[*∗†‡]))*|\d+)$", "", author).strip()
+        author = re.sub(r"(?<=[A-Za-z])\d+(?:\s*,\s*(?:\d+|[+*∗†‡]))*$", "", author).strip()
+        author = re.sub(r"\s+(?:[a-z](?:\s*,\s*(?:[a-z]|\d+|[+*∗†‡]))*|\d+)$", "", author).strip()
         author = author.strip(" ,;*∗†‡")
         if len(author) >= 2 and any(ch.isalpha() for ch in author):
             authors.append(author)
@@ -457,13 +483,7 @@ def load_manifest(path: Path, root: Path) -> dict[str, Any]:
     if not raw.strip():
         return default_manifest(root)
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"{path} is not JSON-compatible YAML. Install PyYAML support or convert the file "
-            "before updating it."
-        ) from exc
+    data = yaml.safe_load(raw)
 
     if not isinstance(data, dict):
         raise RuntimeError(f"{path} must contain a mapping at the top level")
@@ -482,8 +502,14 @@ def write_manifest_atomic(path: Path, data: dict[str, Any]) -> None:
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2, ensure_ascii=False)
-            handle.write("\n")
+            yaml.safe_dump(
+                data,
+                handle,
+                allow_unicode=True,
+                sort_keys=False,
+                default_flow_style=False,
+                width=100,
+            )
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp_path, path)
@@ -607,9 +633,10 @@ def process_pdf(path: Path, args: argparse.Namespace) -> dict[str, Any]:
     digest = sha256_file(path)
     size_bytes = path.stat().st_size
     dest = args.papers_root / classification.category
+    already_in_dest = path.parent.resolve() == dest.resolve()
 
     if args.dry_run:
-        target = unique_target(dest, path.name)
+        target = path if already_in_dest else unique_target(dest, path.name)
         entry = build_entry(
             original_path=path,
             target=target,
@@ -632,7 +659,7 @@ def process_pdf(path: Path, args: argparse.Namespace) -> dict[str, Any]:
     dest.mkdir(parents=True, exist_ok=True)
 
     with manifest_lock(args.papers_root):
-        target = unique_target(dest, path.name)
+        target = path if already_in_dest else unique_target(dest, path.name)
         entry = build_entry(
             original_path=path,
             target=target,
@@ -643,7 +670,8 @@ def process_pdf(path: Path, args: argparse.Namespace) -> dict[str, Any]:
             classification=classification,
             extraction=extraction,
         )
-        shutil.move(str(path), str(target))
+        if not already_in_dest:
+            shutil.move(str(path), str(target))
         manifest = load_manifest(args.manifest, args.papers_root)
         manifest["root"] = str(args.papers_root)
         manifest["updated_at"] = now_iso()
@@ -652,7 +680,7 @@ def process_pdf(path: Path, args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         "path": str(path),
-        "status": "moved",
+        "status": "updated" if already_in_dest else "moved",
         "category": classification.category,
         "target": str(target),
         "classification_attempts": classification_attempts,
@@ -734,6 +762,10 @@ def main(argv: list[str] | None = None) -> int:
             "cwd": os.getcwd(),
             "papers_root": str(args.papers_root),
             "dry_run": args.dry_run,
+            "tools": {
+                "pdfinfo": resolve_executable("pdfinfo"),
+                "pdftotext": resolve_executable("pdftotext"),
+            },
             "results": [summarize_result(result) for result in results],
         },
     )

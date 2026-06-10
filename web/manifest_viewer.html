@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paper Manifest</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --fg: #1d1f21;
+      --muted: #6b6f73;
+      --line: #d7d9d6;
+      --accent: #2266aa;
+      --selected: #dfeaf5;
+      --head: #ececea;
+      --control: #ffffff;
+      --control-line: #d7d9d6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101214;
+        --fg: #f2f5f7;
+        --muted: #c0c7ce;
+        --line: #4c555d;
+        --accent: #8fc7ff;
+        --selected: #284766;
+        --head: #252b31;
+        --control: #161a1f;
+        --control-line: #65717c;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+    header {
+      display: grid;
+      grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--head);
+    }
+    h1 {
+      margin: 0 10px 0 0;
+      font-size: 14px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    input, select, button {
+      height: 28px;
+      border: 1px solid var(--control-line);
+      background: var(--control);
+      color: var(--fg);
+      font: inherit;
+      border-radius: 4px;
+    }
+    input:focus, select:focus, button:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+      outline-offset: 1px;
+      border-color: var(--accent);
+    }
+    input { width: 100%; min-width: 120px; padding: 0 8px; }
+    select { padding: 0 6px; }
+    button {
+      padding: 0 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .icon-button {
+      width: 28px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+    }
+    .icon-button svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    button:disabled {
+      color: var(--muted);
+      cursor: default;
+      opacity: 0.65;
+    }
+    main {
+      min-height: 0;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--head);
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+      user-select: none;
+    }
+    thead th[aria-sort="ascending"],
+    thead th[aria-sort="descending"] {
+      color: var(--fg);
+    }
+    .sort-icon {
+      display: inline-block;
+      width: 0;
+      height: 0;
+      margin-left: 5px;
+      vertical-align: middle;
+      opacity: 0;
+    }
+    thead th[aria-sort="ascending"] .sort-icon {
+      opacity: 1;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-bottom: 6px solid var(--accent);
+    }
+    thead th[aria-sort="descending"] .sort-icon {
+      opacity: 1;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 6px solid var(--accent);
+    }
+    th, td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    tbody tr {
+      cursor: default;
+    }
+    tbody tr:hover {
+      background: color-mix(in srgb, var(--selected) 60%, transparent);
+    }
+    tbody tr.selected {
+      background: var(--selected);
+    }
+    .title { width: 34%; }
+    .authors { width: 22%; }
+    .category { width: 8%; }
+    .identifier { width: 16%; }
+    .file { width: 14%; }
+    .moved { width: 10%; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .muted { color: var(--muted); }
+    footer {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 5px 10px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--head);
+      min-height: 30px;
+    }
+    @media (max-width: 780px) {
+      header {
+        grid-template-columns: 1fr auto;
+      }
+      h1 { display: none; }
+      #search { grid-column: 1 / -1; }
+      .authors, .category, .moved { display: none; }
+      .title { width: 48%; }
+      .identifier { width: 24%; }
+      .file { width: 28%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Paper Manifest</h1>
+      <input id="search" type="search" autocomplete="off" placeholder="Search title, authors, DOI, arXiv, file">
+      <select id="viewer" aria-label="PDF viewer">
+        <option value="default">System default</option>
+        <option value="skim">Skim</option>
+        <option value="preview">Preview</option>
+        <option value="browser">Browser</option>
+      </select>
+      <button id="open" disabled>Open</button>
+      <button id="refresh">Refresh</button>
+      <button id="openManifest" class="icon-button" title="Open manifest.yaml" aria-label="Open manifest.yaml">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 3v5h5"/>
+          <path d="M10 12l-2 2 2 2"/>
+          <path d="M14 12l2 2-2 2"/>
+        </svg>
+      </button>
+    </header>
+    <main>
+      <table>
+        <thead>
+          <tr>
+            <th class="title" data-sort="title"><span>Title</span><span class="sort-icon" aria-hidden="true"></span></th>
+            <th class="authors" data-sort="authors"><span>Authors</span><span class="sort-icon" aria-hidden="true"></span></th>
+            <th class="category" data-sort="category"><span>Type</span><span class="sort-icon" aria-hidden="true"></span></th>
+            <th class="identifier" data-sort="identifier"><span>ID</span><span class="sort-icon" aria-hidden="true"></span></th>
+            <th class="file" data-sort="file"><span>File</span><span class="sort-icon" aria-hidden="true"></span></th>
+            <th class="moved" data-sort="moved_at"><span>Moved</span><span class="sort-icon" aria-hidden="true"></span></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </main>
+    <footer>
+      <span id="count">0 papers</span>
+      <span id="status"></span>
+    </footer>
+  </div>
+  <script>
+    const state = {
+      papers: [],
+      filtered: [],
+      selectedId: null,
+      sortKey: 'moved_at',
+      sortDir: 'desc'
+    };
+
+    const rows = document.getElementById('rows');
+    const search = document.getElementById('search');
+    const viewer = document.getElementById('viewer');
+    const openButton = document.getElementById('open');
+    const refreshButton = document.getElementById('refresh');
+    const openManifestButton = document.getElementById('openManifest');
+    const count = document.getElementById('count');
+    const status = document.getElementById('status');
+
+    function setStatus(text) {
+      status.textContent = text || '';
+    }
+
+    function text(value) {
+      return value == null ? '' : String(value);
+    }
+
+    function matchPaper(paper, query) {
+      if (!query) return true;
+      return paper.search_text.includes(query);
+    }
+
+    function compareValues(a, b) {
+      const av = text(a).toLowerCase();
+      const bv = text(b).toLowerCase();
+      if (av < bv) return -1;
+      if (av > bv) return 1;
+      return 0;
+    }
+
+    function applyFilterSort() {
+      const query = search.value.trim().toLowerCase();
+      state.filtered = state.papers.filter((paper) => matchPaper(paper, query));
+      state.filtered.sort((a, b) => {
+        const result = compareValues(a[state.sortKey], b[state.sortKey]);
+        return state.sortDir === 'asc' ? result : -result;
+      });
+      render();
+    }
+
+    function render() {
+      updateSortIndicators();
+      rows.textContent = '';
+      const frag = document.createDocumentFragment();
+      for (const paper of state.filtered) {
+        const tr = document.createElement('tr');
+        tr.dataset.id = paper.id;
+        if (paper.id === state.selectedId) tr.className = 'selected';
+        tr.innerHTML = `
+          <td class="title" title="${escapeAttr(paper.title)}">${escapeHtml(paper.title || '(untitled)')}</td>
+          <td class="authors" title="${escapeAttr(paper.authors)}">${escapeHtml(paper.authors)}</td>
+          <td class="category muted">${escapeHtml(paper.category)}</td>
+          <td class="identifier mono" title="${escapeAttr(paper.identifier)}">${escapeHtml(paper.identifier)}</td>
+          <td class="file mono" title="${escapeAttr(paper.file)}">${escapeHtml(paper.file)}</td>
+          <td class="moved mono">${escapeHtml(shortDate(paper.moved_at))}</td>
+        `;
+        tr.addEventListener('click', () => selectPaper(paper.id));
+        tr.addEventListener('dblclick', () => openSelected());
+        frag.appendChild(tr);
+      }
+      rows.appendChild(frag);
+      const total = state.papers.length;
+      const shown = state.filtered.length;
+      count.textContent = `${shown} / ${total} papers`;
+      openButton.disabled = !state.selectedId;
+    }
+
+    function updateSortIndicators() {
+      document.querySelectorAll('th[data-sort]').forEach((th) => {
+        if (th.dataset.sort === state.sortKey) {
+          th.setAttribute('aria-sort', state.sortDir === 'asc' ? 'ascending' : 'descending');
+        } else {
+          th.removeAttribute('aria-sort');
+        }
+      });
+    }
+
+    function escapeHtml(value) {
+      return text(value).replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, '&#96;');
+    }
+
+    function shortDate(value) {
+      if (!value) return '';
+      return value.replace('T', ' ').replace(/:\d\d([+-]\d\d:\d\d|Z)?$/, '');
+    }
+
+    function selectPaper(id, scroll) {
+      state.selectedId = id;
+      render();
+      if (scroll) {
+        requestAnimationFrame(() => {
+          const row = rows.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
+          if (row) row.scrollIntoView({block: 'nearest'});
+        });
+      }
+    }
+
+    function moveSelection(delta) {
+      if (!state.filtered.length) return;
+      let index = state.filtered.findIndex((paper) => paper.id === state.selectedId);
+      if (index === -1) {
+        index = delta > 0 ? 0 : state.filtered.length - 1;
+      } else {
+        index = Math.max(0, Math.min(state.filtered.length - 1, index + delta));
+      }
+      selectPaper(state.filtered[index].id, true);
+    }
+
+    function clearSelection() {
+      if (!state.selectedId) return;
+      state.selectedId = null;
+      render();
+    }
+
+    function isEditableTarget(target) {
+      if (!target) return false;
+      if (target.isContentEditable) return true;
+      return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+    }
+
+    async function loadConfig() {
+      const res = await fetch('/api/config');
+      if (!res.ok) throw new Error('Could not load config');
+      const config = await res.json();
+      viewer.value = config.viewer || 'default';
+    }
+
+    async function saveConfig() {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({viewer: viewer.value})
+      });
+      if (!res.ok) setStatus('Could not save viewer preference');
+    }
+
+    async function loadPapers() {
+      setStatus('Loading...');
+      const res = await fetch('/api/papers');
+      if (!res.ok) throw new Error('Could not load manifest');
+      const data = await res.json();
+      state.papers = data.papers || [];
+      if (!state.papers.some((paper) => paper.id === state.selectedId)) {
+        state.selectedId = null;
+      }
+      applyFilterSort();
+      setStatus(data.manifest || '');
+    }
+
+    async function openSelected() {
+      if (!state.selectedId) return;
+      const res = await fetch('/api/open', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: state.selectedId, viewer: viewer.value})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setStatus(data.error || 'Open failed');
+        return;
+      }
+      if (data.url) {
+        window.open(data.url, '_blank', 'noopener');
+      }
+      setStatus('Opened');
+    }
+
+    async function openManifest() {
+      const res = await fetch('/api/open-manifest', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setStatus(data.error || 'Could not open manifest');
+        return;
+      }
+      setStatus('Opened manifest');
+    }
+
+    search.addEventListener('input', () => {
+      state.selectedId = null;
+      applyFilterSort();
+    });
+    viewer.addEventListener('change', saveConfig);
+    openButton.addEventListener('click', openSelected);
+    refreshButton.addEventListener('click', loadPapers);
+    openManifestButton.addEventListener('click', openManifest);
+    document.querySelectorAll('th[data-sort]').forEach((th) => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        if (state.sortKey === key) {
+          state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.sortKey = key;
+          state.sortDir = key === 'moved_at' ? 'desc' : 'asc';
+        }
+        applyFilterSort();
+      });
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !isEditableTarget(event.target)) {
+        event.preventDefault();
+        search.focus();
+        search.select();
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (event.target === viewer) return;
+        event.preventDefault();
+        moveSelection(event.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if (event.key === 'Enter' && state.selectedId && event.target.tagName !== 'BUTTON' && event.target !== viewer) {
+        event.preventDefault();
+        openSelected();
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        loadPapers();
+      }
+    });
+
+    Promise.all([loadConfig(), loadPapers()]).catch((error) => setStatus(error.message));
+  </script>
+</body>
+</html>
