@@ -38,6 +38,10 @@ It is intentionally small:
 - Search, sort, tag papers, and open PDFs from the viewer.
 - Run the viewer on demand, in the background, or as a login-time LaunchAgent.
 
+<div align=center>
+  <img src="./assets/manifest-viewer.jpg" width=50% />
+</div>
+
 ## Library Layout
 
 Recognized PDFs are moved into:
