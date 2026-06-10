@@ -453,7 +453,7 @@
 
     function tagsHtml(paper) {
       const chips = (paper.tags || []).map((tag) => `
-        <span class="tag-chip">
+        <span class="tag-chip" data-action="filter-tag" data-tag="${escapeAttr(tag)}" title="Add ${escapeAttr(tag)} to search">
           <button type="button" class="tag-filter" data-action="filter-tag" data-tag="${escapeAttr(tag)}" title="Add ${escapeAttr(tag)} to search">${escapeHtml(tag)}</button>
           <button type="button" class="tag-remove" data-action="remove-tag" data-id="${escapeAttr(paper.id)}" data-tag="${escapeAttr(tag)}" title="Remove ${escapeAttr(tag)}" aria-label="Remove ${escapeAttr(tag)}">×</button>
         </span>
@@ -679,13 +679,25 @@
     refreshButton.addEventListener('click', loadPapers);
     openManifestButton.addEventListener('click', openManifest);
     rows.addEventListener('click', (event) => {
-      const button = event.target.closest('button[data-action]');
-      if (!button) return;
-      event.stopPropagation();
-      const action = button.dataset.action;
-      if (action === 'add-tag') openTagMenu(button.dataset.id, button);
-      if (action === 'filter-tag') addTagToSearch(button.dataset.tag);
-      if (action === 'remove-tag') removeTag(button.dataset.id, button.dataset.tag);
+      const removeButton = event.target.closest('button[data-action="remove-tag"]');
+      if (removeButton) {
+        event.stopPropagation();
+        removeTag(removeButton.dataset.id, removeButton.dataset.tag);
+        return;
+      }
+
+      const addButton = event.target.closest('button[data-action="add-tag"]');
+      if (addButton) {
+        event.stopPropagation();
+        openTagMenu(addButton.dataset.id, addButton);
+        return;
+      }
+
+      const tagChip = event.target.closest('[data-action="filter-tag"]');
+      if (tagChip) {
+        event.stopPropagation();
+        addTagToSearch(tagChip.dataset.tag);
+      }
     });
     tagInput.addEventListener('input', renderTagSuggestions);
     tagInput.addEventListener('compositionstart', () => {
