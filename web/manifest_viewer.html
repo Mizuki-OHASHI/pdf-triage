@@ -17,6 +17,8 @@
       --head: #ececea;
       --control: #ffffff;
       --control-line: #d7d9d6;
+      --tag-bg: #e8edf2;
+      --tag-line: #c8d0d8;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -29,6 +31,8 @@
         --head: #252b31;
         --control: #161a1f;
         --control-line: #65717c;
+        --tag-bg: #25313c;
+        --tag-line: #596977;
       }
     }
     * { box-sizing: border-box; }
@@ -160,12 +164,99 @@
     tbody tr.selected {
       background: var(--selected);
     }
-    .title { width: 34%; }
-    .authors { width: 22%; }
-    .category { width: 8%; }
-    .identifier { width: 16%; }
-    .file { width: 14%; }
-    .moved { width: 10%; }
+    .title { width: 27%; }
+    .authors { width: 18%; }
+    .category { width: 7%; }
+    .identifier { width: 14%; }
+    .file { width: 12%; }
+    .moved { width: 9%; }
+    .tags { width: 17%; }
+    .tags-cell {
+      overflow: visible;
+    }
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      align-items: center;
+      min-height: 20px;
+    }
+    .tag-chip, .tag-add {
+      height: 20px;
+      border: 1px solid var(--tag-line);
+      background: var(--tag-bg);
+      color: var(--fg);
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 18px;
+    }
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 150px;
+      overflow: hidden;
+    }
+    .tag-filter, .tag-remove {
+      height: 18px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      border-radius: 0;
+      font-size: 12px;
+      line-height: 18px;
+    }
+    .tag-filter {
+      min-width: 0;
+      max-width: 126px;
+      padding: 0 5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tag-remove {
+      width: 18px;
+      padding: 0;
+      border-left: 1px solid var(--tag-line);
+      color: var(--muted);
+    }
+    .tag-filter:hover, .tag-remove:hover {
+      background: var(--selected);
+      color: var(--fg);
+    }
+    .tag-add {
+      width: 22px;
+      padding: 0;
+    }
+    .tag-menu {
+      position: fixed;
+      z-index: 10;
+      width: 220px;
+      border: 1px solid var(--control-line);
+      background: var(--control);
+      color: var(--fg);
+      border-radius: 4px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+      padding: 6px;
+    }
+    .tag-menu[hidden] {
+      display: none;
+    }
+    .tag-menu input {
+      width: 100%;
+      margin-bottom: 6px;
+    }
+    .tag-option {
+      display: block;
+      width: 100%;
+      height: 24px;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 0 6px;
+      color: var(--fg);
+    }
+    .tag-option:hover, .tag-option.active {
+      background: var(--selected);
+    }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 12px;
@@ -188,9 +279,10 @@
       h1 { display: none; }
       #search { grid-column: 1 / -1; }
       .authors, .category, .moved { display: none; }
-      .title { width: 48%; }
-      .identifier { width: 24%; }
-      .file { width: 28%; }
+      .title { width: 38%; }
+      .identifier { width: 22%; }
+      .file { width: 20%; }
+      .tags { width: 20%; }
     }
   </style>
 </head>
@@ -226,6 +318,7 @@
             <th class="identifier" data-sort="identifier"><span>ID</span><span class="sort-icon" aria-hidden="true"></span></th>
             <th class="file" data-sort="file"><span>File</span><span class="sort-icon" aria-hidden="true"></span></th>
             <th class="moved" data-sort="moved_at"><span>Moved</span><span class="sort-icon" aria-hidden="true"></span></th>
+            <th class="tags" data-sort="tags_text"><span>Tags</span><span class="sort-icon" aria-hidden="true"></span></th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -236,11 +329,18 @@
       <span id="status"></span>
     </footer>
   </div>
+  <div id="tagMenu" class="tag-menu" hidden>
+    <input id="tagInput" type="text" autocomplete="off" placeholder="Add tag">
+    <div id="tagSuggestions"></div>
+  </div>
   <script>
     const state = {
       papers: [],
       filtered: [],
+      allTags: [],
       selectedId: null,
+      activeTagPaperId: null,
+      tagInputComposing: false,
       sortKey: 'moved_at',
       sortDir: 'desc'
     };
@@ -251,6 +351,9 @@
     const openButton = document.getElementById('open');
     const refreshButton = document.getElementById('refresh');
     const openManifestButton = document.getElementById('openManifest');
+    const tagMenu = document.getElementById('tagMenu');
+    const tagInput = document.getElementById('tagInput');
+    const tagSuggestions = document.getElementById('tagSuggestions');
     const count = document.getElementById('count');
     const status = document.getElementById('status');
 
@@ -262,9 +365,13 @@
       return value == null ? '' : String(value);
     }
 
-    function matchPaper(paper, query) {
-      if (!query) return true;
-      return paper.search_text.includes(query);
+    function searchTerms() {
+      return search.value.trim().toLowerCase().split(/[\s　]+/).filter(Boolean);
+    }
+
+    function matchPaper(paper, terms) {
+      if (!terms.length) return true;
+      return terms.some((term) => paper.search_text.includes(term));
     }
 
     function compareValues(a, b) {
@@ -276,8 +383,8 @@
     }
 
     function applyFilterSort() {
-      const query = search.value.trim().toLowerCase();
-      state.filtered = state.papers.filter((paper) => matchPaper(paper, query));
+      const terms = searchTerms();
+      state.filtered = state.papers.filter((paper) => matchPaper(paper, terms));
       state.filtered.sort((a, b) => {
         const result = compareValues(a[state.sortKey], b[state.sortKey]);
         return state.sortDir === 'asc' ? result : -result;
@@ -300,9 +407,16 @@
           <td class="identifier mono" title="${escapeAttr(paper.identifier)}">${escapeHtml(paper.identifier)}</td>
           <td class="file mono" title="${escapeAttr(paper.file)}">${escapeHtml(paper.file)}</td>
           <td class="moved mono">${escapeHtml(shortDate(paper.moved_at))}</td>
+          <td class="tags tags-cell">${tagsHtml(paper)}</td>
         `;
-        tr.addEventListener('click', () => selectPaper(paper.id));
-        tr.addEventListener('dblclick', () => openSelected());
+        tr.addEventListener('click', (event) => {
+          if (event.target.closest('button, input, select')) return;
+          selectPaper(paper.id);
+        });
+        tr.addEventListener('dblclick', (event) => {
+          if (event.target.closest('button, input, select')) return;
+          openSelected();
+        });
         frag.appendChild(tr);
       }
       rows.appendChild(frag);
@@ -337,6 +451,21 @@
       return value.replace('T', ' ').replace(/:\d\d([+-]\d\d:\d\d|Z)?$/, '');
     }
 
+    function tagsHtml(paper) {
+      const chips = (paper.tags || []).map((tag) => `
+        <span class="tag-chip">
+          <button type="button" class="tag-filter" data-action="filter-tag" data-tag="${escapeAttr(tag)}" title="Add ${escapeAttr(tag)} to search">${escapeHtml(tag)}</button>
+          <button type="button" class="tag-remove" data-action="remove-tag" data-id="${escapeAttr(paper.id)}" data-tag="${escapeAttr(tag)}" title="Remove ${escapeAttr(tag)}" aria-label="Remove ${escapeAttr(tag)}">×</button>
+        </span>
+      `).join('');
+      return `
+        <div class="tag-list">
+          ${chips}
+          <button class="tag-add" data-action="add-tag" data-id="${escapeAttr(paper.id)}" title="Add tag" aria-label="Add tag">+</button>
+        </div>
+      `;
+    }
+
     function selectPaper(id, scroll) {
       state.selectedId = id;
       render();
@@ -350,6 +479,7 @@
 
     function moveSelection(delta) {
       if (!state.filtered.length) return;
+      if (document.activeElement === search) search.blur();
       let index = state.filtered.findIndex((paper) => paper.id === state.selectedId);
       if (index === -1) {
         index = delta > 0 ? 0 : state.filtered.length - 1;
@@ -365,10 +495,117 @@
       render();
     }
 
+    function addTagToSearch(tag) {
+      const normalized = text(tag).trim().replace(/\s+/g, ' ');
+      if (!normalized) return;
+      const terms = search.value.trim() ? search.value.trim().split(/[\s　]+/) : [];
+      const existingTerms = new Set(terms.map((term) => term.toLowerCase()));
+      const tagTerms = normalized.split(/[\s　]+/);
+      const exists = tagTerms.every((term) => existingTerms.has(term.toLowerCase()));
+      if (!exists) terms.push(normalized);
+      search.value = terms.join(' ');
+      state.selectedId = null;
+      applyFilterSort();
+      search.focus();
+      search.setSelectionRange(search.value.length, search.value.length);
+    }
+
     function isEditableTarget(target) {
       if (!target) return false;
       if (target.isContentEditable) return true;
       return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+    }
+
+    function paperById(id) {
+      return state.papers.find((paper) => paper.id === id);
+    }
+
+    function openTagMenu(paperId, anchor) {
+      state.activeTagPaperId = paperId;
+      tagInput.value = '';
+      renderTagSuggestions();
+      const rect = anchor.getBoundingClientRect();
+      tagMenu.hidden = false;
+      const left = Math.min(rect.left, window.innerWidth - tagMenu.offsetWidth - 8);
+      tagMenu.style.left = `${Math.max(8, left)}px`;
+      tagMenu.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - tagMenu.offsetHeight - 8)}px`;
+      tagInput.focus();
+    }
+
+    function closeTagMenu() {
+      state.activeTagPaperId = null;
+      tagMenu.hidden = true;
+    }
+
+    function renderTagSuggestions() {
+      const paper = paperById(state.activeTagPaperId);
+      if (!paper) {
+        tagSuggestions.textContent = '';
+        return;
+      }
+      const current = new Set((paper.tags || []).map((tag) => tag.toLowerCase()));
+      const query = tagInput.value.trim().toLowerCase();
+      const options = state.allTags
+        .filter((tag) => !current.has(tag.toLowerCase()))
+        .filter((tag) => !query || tag.toLowerCase().includes(query))
+        .slice(0, 8);
+
+      tagSuggestions.textContent = '';
+      const frag = document.createDocumentFragment();
+      if (tagInput.value.trim() && !state.allTags.some((tag) => tag.toLowerCase() === query)) {
+        frag.appendChild(tagOption(`Create "${tagInput.value.trim()}"`, tagInput.value.trim()));
+      }
+      for (const tag of options) {
+        frag.appendChild(tagOption(tag, tag));
+      }
+      tagSuggestions.appendChild(frag);
+    }
+
+    function tagOption(label, tag) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'tag-option';
+      button.textContent = label;
+      button.dataset.tag = tag;
+      button.addEventListener('click', () => addTag(state.activeTagPaperId, tag));
+      return button;
+    }
+
+    async function saveTags(paperId, tags) {
+      const res = await fetch('/api/tags', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: paperId, tags})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus(data.error || 'Could not save tags');
+        return false;
+      }
+      setStatus('Saved tags');
+      await loadPapers();
+      return true;
+    }
+
+    async function addTag(paperId, tag) {
+      const paper = paperById(paperId);
+      if (!paper) return;
+      const normalized = tag.trim().replace(/\s+/g, ' ');
+      if (!normalized) return;
+      const exists = (paper.tags || []).some((existing) => existing.toLowerCase() === normalized.toLowerCase());
+      if (exists) {
+        closeTagMenu();
+        return;
+      }
+      await saveTags(paperId, [...(paper.tags || []), normalized]);
+      closeTagMenu();
+    }
+
+    async function removeTag(paperId, tag) {
+      const paper = paperById(paperId);
+      if (!paper) return;
+      const nextTags = (paper.tags || []).filter((existing) => existing !== tag);
+      await saveTags(paperId, nextTags);
     }
 
     async function loadConfig() {
@@ -393,6 +630,7 @@
       if (!res.ok) throw new Error('Could not load manifest');
       const data = await res.json();
       state.papers = data.papers || [];
+      state.allTags = data.tags || [];
       if (!state.papers.some((paper) => paper.id === state.selectedId)) {
         state.selectedId = null;
       }
@@ -440,6 +678,42 @@
     openButton.addEventListener('click', openSelected);
     refreshButton.addEventListener('click', loadPapers);
     openManifestButton.addEventListener('click', openManifest);
+    rows.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+      event.stopPropagation();
+      const action = button.dataset.action;
+      if (action === 'add-tag') openTagMenu(button.dataset.id, button);
+      if (action === 'filter-tag') addTagToSearch(button.dataset.tag);
+      if (action === 'remove-tag') removeTag(button.dataset.id, button.dataset.tag);
+    });
+    tagInput.addEventListener('input', renderTagSuggestions);
+    tagInput.addEventListener('compositionstart', () => {
+      state.tagInputComposing = true;
+    });
+    tagInput.addEventListener('compositionend', () => {
+      state.tagInputComposing = false;
+      renderTagSuggestions();
+    });
+    tagInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        if (event.isComposing || state.tagInputComposing) return;
+        event.preventDefault();
+        const first = tagSuggestions.querySelector('.tag-option');
+        if (first) addTag(state.activeTagPaperId, first.dataset.tag);
+        else addTag(state.activeTagPaperId, tagInput.value);
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeTagMenu();
+      }
+    });
+    document.addEventListener('click', (event) => {
+      if (tagMenu.hidden) return;
+      if (tagMenu.contains(event.target)) return;
+      if (event.target.closest('button[data-action="add-tag"]')) return;
+      closeTagMenu();
+    });
     document.querySelectorAll('th[data-sort]').forEach((th) => {
       th.addEventListener('click', () => {
         const key = th.dataset.sort;
@@ -465,7 +739,7 @@
         moveSelection(event.key === 'ArrowDown' ? 1 : -1);
         return;
       }
-      if (event.key === 'Enter' && state.selectedId && event.target.tagName !== 'BUTTON' && event.target !== viewer) {
+      if (event.key === 'Enter' && state.selectedId && !isEditableTarget(event.target) && event.target.tagName !== 'BUTTON') {
         event.preventDefault();
         openSelected();
         return;

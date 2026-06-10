@@ -169,6 +169,34 @@ manifest_viewer.py --viewer browser
 manifest_viewer.py --papers-root ~/Documents/Papers --port 8765
 ```
 
+Run it as a background process:
+
+```bash
+manifest_viewer.py --restart
+manifest_viewer.py --status
+manifest_viewer.py --stop
+```
+
+Install it as a macOS LaunchAgent so it starts when the user logs in:
+
+```bash
+manifest_viewer.py --install-launch-agent
+manifest_viewer.py --status
+```
+
+Restart or remove the LaunchAgent:
+
+```bash
+manifest_viewer.py --restart
+manifest_viewer.py --uninstall-launch-agent
+```
+
+The LaunchAgent file is:
+
+```text
+~/Library/LaunchAgents/com.pdf-triage.manifest-viewer.plist
+```
+
 The viewer preference is persisted at:
 
 ```text
@@ -183,3 +211,6 @@ Keyboard:
 - `/`: focus search
 - `Up` / `Down`: select a row
 - `Enter`: open the selected row
+
+Search terms are OR-matched when separated by spaces. Tags are stored in each
+manifest paper entry as `tags: [...]` and are included in search.

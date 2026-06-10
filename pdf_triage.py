@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,7 +87,8 @@ PUBLISHER_RE = re.compile(
 
 NOISE_TITLE_RE = re.compile(
     r"(?i)\b(abstract|introduction|keywords?|contents|references|bibliography|"
-    r"copyright|all rights reserved|downloaded from|accepted manuscript)\b"
+    r"copyright|all rights reserved|downloaded from|accepted manuscript|research article|"
+    r"special collection|articles you may be interested in|view\s+export|online\s+citation)\b"
 )
 AFFILIATION_RE = re.compile(
     r"(?i)\b(university|institute|department|laboratory|lab\.|faculty|school|"
@@ -97,7 +99,11 @@ AFFILIATION_RE = re.compile(
 HEADER_LINE_RE = re.compile(
     r"(?i)("
     r"\brapid communications\b|"
+    r"\bweek ending\b|"
+    r"\bprl\s+\d+\b|"
+    r"\bphysical review letters\b|"
     r"\bphysical review\s+[a-z]?\s*\d+\b|"
+    r"\baip advances\s+\d+\b|"
     r"\bj\.\s*phys\.\s*soc\.\s*jpn\.|"
     r"\bjournal of the physical society of japan\s+\d+\b|"
     r"\bvolume\s+\d+\b|"
@@ -110,7 +116,11 @@ HEADER_LINE_RE = re.compile(
 )
 AUTHOR_STOP_RE = re.compile(
     r"(?i)^[^A-Za-z]*(abstract|received|accepted|available online|published|doi\s*:|pacs\b|contents\b|"
-    r"program summary|title of library|catalogue identifier)\b"
+    r"program summary|title of library|catalogue identifier|articles you may be interested in|"
+    r"aip advances|physical review|prl\b)\b"
+)
+TITLE_CONTINUATION_START_RE = re.compile(
+    r"(?i)^(?:a|an|the|in|of|for|with|from|to|and|or|under|through|by|on|as|at|via|using)\b"
 )
 
 
@@ -262,6 +272,14 @@ def clean_title(value: str) -> str:
     return value
 
 
+def strip_private_symbols(value: str) -> str:
+    return "".join(
+        ch
+        for ch in value
+        if unicodedata.category(ch) != "Co" and not unicodedata.category(ch).startswith("S")
+    )
+
+
 def find_arxiv_id(haystack: str, filename: str) -> str | None:
     match = ARXIV_ID_RE.search(haystack)
     if match:
@@ -371,10 +389,21 @@ def likely_author_line(line: str) -> bool:
     return has_separator or has_name_shape
 
 
+def likely_title_continuation(previous: str, line: str) -> bool:
+    previous = previous.rstrip()
+    if previous.endswith(("-", "–", "—", ":")):
+        return True
+    if TITLE_CONTINUATION_START_RE.search(line):
+        return True
+    first_word = re.sub(r"^[^A-Za-z]+|[^A-Za-z]+$", "", line.split()[0] if line.split() else "")
+    return bool(first_word and first_word[0].islower())
+
+
 def split_authors(value: str | None) -> list[str]:
     if not value:
         return []
     value = normalize_text(value)
+    value = strip_private_symbols(value)
     value = value.replace(" ,", ",")
     value = re.sub(r"\s+", " ", value)
     value = re.sub(r"(?<=[A-Za-z])\s*,?\s*\d+(?:\s*,\s*(?:\d+|[+*∗†‡]))*(?=\s+(?:and\s+)?[A-Z]|$)", ", ", value)
@@ -419,28 +448,35 @@ def extract_title_authors(info: dict[str, str], text: str) -> Extraction:
     lines = clean_pdf_lines(text)
     title: str | None = None
     title_index: int | None = None
+    author_start_index: int | None = None
 
     for index, line in enumerate(lines[:50]):
         if not valid_title_line(line):
             continue
 
         title_parts = [line]
-        for next_line in lines[index + 1 : index + 3]:
+        title_end_index = index + 1
+        for next_index in range(index + 1, min(len(lines), index + 4)):
+            next_line = lines[next_index]
             if not valid_title_line(next_line):
-                break
-            if likely_author_line(next_line):
                 break
             if len(" ".join(title_parts + [next_line])) > 260:
                 break
+
+            if likely_author_line(next_line) and not likely_title_continuation(title_parts[-1], next_line):
+                break
+
             title_parts.append(next_line)
+            title_end_index = next_index + 1
 
         title = clean_title(" ".join(title_parts))
         title_index = index
+        author_start_index = title_end_index
         break
 
     authors: list[str] = []
-    if title_index is not None:
-        authors = extract_author_lines(lines, title_index + 1)
+    if author_start_index is not None:
+        authors = extract_author_lines(lines, author_start_index)
 
     if title:
         confidence = 0.68 if authors else 0.55
@@ -536,9 +572,38 @@ def upsert_paper(manifest: dict[str, Any], entry: dict[str, Any]) -> None:
     entry_id = entry["id"]
     for index, existing in enumerate(papers):
         if isinstance(existing, dict) and existing.get("id") == entry_id:
-            papers[index] = entry
+            papers[index] = merge_existing_entry(existing, entry)
             return
     papers.append(entry)
+
+
+def merge_existing_entry(existing: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(entry)
+
+    if "tags" in existing and "tags" not in merged:
+        merged["tags"] = existing["tags"]
+
+    existing_file = existing.get("file") if isinstance(existing.get("file"), dict) else {}
+    merged_file = dict(merged.get("file") or {})
+    for key in ["original_path", "original_name"]:
+        if existing_file.get(key):
+            merged_file[key] = existing_file[key]
+    merged["file"] = merged_file
+
+    existing_source = existing.get("source") if isinstance(existing.get("source"), dict) else {}
+    merged_source = dict(merged.get("source") or {})
+    if not merged_source.get("where_froms") and existing_source.get("where_froms"):
+        merged_source["where_froms"] = existing_source["where_froms"]
+        merged_source["detected_url"] = existing_source.get("detected_url")
+    merged["source"] = merged_source
+
+    existing_triage = existing.get("triage") if isinstance(existing.get("triage"), dict) else {}
+    merged_triage = dict(merged.get("triage") or {})
+    if existing_triage.get("moved_at"):
+        merged_triage["moved_at"] = existing_triage["moved_at"]
+    merged["triage"] = merged_triage
+
+    return merged
 
 
 def build_entry(
