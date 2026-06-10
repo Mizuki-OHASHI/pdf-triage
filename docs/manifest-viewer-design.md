@@ -1,4 +1,4 @@
-# Manifest Viewer Plan
+# Manifest Viewer Design Notes
 
 ## Goal
 
