@@ -29,7 +29,7 @@ It is intentionally small:
 ## Features
 
 - Watch `~/Downloads` with macOS Folder Actions.
-- Move recognized arXiv and journal PDFs automatically.
+- Move recognized arXiv, journal, and conference PDFs automatically.
 - Leave unrecognized or non-paper PDFs untouched.
 - Extract DOI/arXiv IDs, title, and authors using local metadata and
   `pdftotext` heuristics.
@@ -47,6 +47,7 @@ It is intentionally small:
 Recognized PDFs are moved into:
 
 - `~/Documents/Papers/arxiv`
+- `~/Documents/Papers/conference`
 - `~/Documents/Papers/journal`
 
 The central manifest is:

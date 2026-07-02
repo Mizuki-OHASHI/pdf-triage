@@ -47,6 +47,7 @@ ARXIV_ID_RE = re.compile(
 )
 ARXIV_FILENAME_RE = re.compile(r"^\d{4}\.\d{4,5}(?:v\d+)?\.pdf$", re.IGNORECASE)
 DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", re.IGNORECASE)
+INTERNAL_TITLE_RE = re.compile(r"(?i)^[a-z]{2,}(?:20\d{2})?[_-][a-z0-9_-]+$")
 
 PUBLISHER_RE = re.compile(
     "|".join(
@@ -84,6 +85,22 @@ PUBLISHER_RE = re.compile(
     ),
     re.IGNORECASE,
 )
+CONFERENCE_RE = re.compile(
+    r"(?i)("
+    r"\bneurips\b|"
+    r"\bneural information processing systems\b|"
+    r"\binternational conference on machine learning\b|"
+    r"\bproceedings of machine learning research\b|"
+    r"\bjmlr:\s*w&cp\b|"
+    r"\bproceedings\.mlr\.press\b|"
+    r"\bproceedings\.neurips\.cc\b|"
+    r"\binternational conference on learning representations\b|"
+    r"\biclr\b|"
+    r"\baaai conference\b|"
+    r"\bcomputer vision and pattern recognition\b|"
+    r"\bcvpr\b"
+    r")"
+)
 
 NOISE_TITLE_RE = re.compile(
     r"(?i)\b(abstract|introduction|keywords?|contents|references|bibliography|"
@@ -94,7 +111,7 @@ AFFILIATION_RE = re.compile(
     r"(?i)\b(university|institute|department|laboratory|lab\.|faculty|school|"
     r"college|center|centre|academy|corporation|inc\.|ltd\.|gmbh|"
     r"universit[a-zäéàà̈]*|institut|rechenzentrum|division|national lab|"
-    r"riken|laboratoire|research center)\b"
+    r"riken|laboratoire|research center|uc berkeley)\b"
 )
 HEADER_LINE_RE = re.compile(
     r"(?i)("
@@ -121,6 +138,9 @@ AUTHOR_STOP_RE = re.compile(
 )
 TITLE_CONTINUATION_START_RE = re.compile(
     r"(?i)^(?:a|an|the|in|of|for|with|from|to|and|or|under|through|by|on|as|at|via|using)\b"
+)
+TITLE_CONTINUATION_END_RE = re.compile(
+    r"(?i)\b(?:a|an|the|in|of|for|with|from|to|and|or|under|through|by|on|as|at|via|using)$"
 )
 
 
@@ -319,7 +339,10 @@ def classify(path: Path, where_values: list[str], info: dict[str, str], text: st
     if PUBLISHER_RE.search(haystack):
         return Classification("journal", "matched known publisher/source URL")
 
-    return Classification(None, "no arXiv, DOI, or known journal publisher signal")
+    if CONFERENCE_RE.search(haystack):
+        return Classification("conference", "matched known conference/proceedings signal")
+
+    return Classification(None, "no arXiv, DOI, known journal publisher, or conference signal")
 
 
 def clean_pdf_lines(text: str) -> list[str]:
@@ -360,6 +383,8 @@ def valid_metadata_title(value: str) -> bool:
     lowered = value.lower()
     if lowered in {"untitled", "unknown"}:
         return False
+    if INTERNAL_TITLE_RE.search(value):
+        return False
     if lowered.startswith("doi:") or lowered.startswith("doi "):
         return False
     doi = find_doi(value)
@@ -393,10 +418,33 @@ def likely_title_continuation(previous: str, line: str) -> bool:
     previous = previous.rstrip()
     if previous.endswith(("-", "–", "—", ":")):
         return True
+    if TITLE_CONTINUATION_END_RE.search(previous):
+        return True
     if TITLE_CONTINUATION_START_RE.search(line):
         return True
     first_word = re.sub(r"^[^A-Za-z]+|[^A-Za-z]+$", "", line.split()[0] if line.split() else "")
     return bool(first_word and first_word[0].islower())
+
+
+def clean_author_candidate(line: str) -> str:
+    if "@" not in line:
+        return line
+    cleaned = re.sub(r"\s+[A-Z0-9._%+-]+\s*@.*$", "", line, flags=re.IGNORECASE)
+    return normalize_text(cleaned)
+
+
+def split_space_separated_names(value: str) -> list[str]:
+    if re.search(r"[,;&]", value):
+        return []
+    words = value.split()
+    if len(words) not in {4, 6, 8}:
+        return []
+    if any(not re.search(r"[A-Za-z]", word) for word in words):
+        return []
+    names = [" ".join(words[index : index + 2]).strip() for index in range(0, len(words), 2)]
+    if all(len(name) >= 4 and any(ch.islower() for ch in name) for name in names):
+        return names
+    return []
 
 
 def split_authors(value: str | None) -> list[str]:
@@ -411,6 +459,11 @@ def split_authors(value: str | None) -> list[str]:
     value = re.sub(r"\s+and\s+", ", ", value)
     value = re.sub(r"\s*,\s*", ", ", value)
     value = re.sub(r"(?:,\s*)+", ", ", value).strip(" ,")
+
+    space_separated = split_space_separated_names(value)
+    if space_separated:
+        return space_separated
+
     parts = value.split(";") if ";" in value else value.split(",")
     authors = []
     for part in parts:
@@ -429,10 +482,13 @@ def extract_author_lines(lines: list[str], start: int) -> list[str]:
     for line in lines[start : start + 14]:
         if AUTHOR_STOP_RE.search(line):
             break
-        if AFFILIATION_RE.search(line):
+        candidate = clean_author_candidate(line)
+        if not candidate:
             continue
-        if likely_author_line(line):
-            authors.extend(split_authors(line))
+        if AFFILIATION_RE.search(candidate):
+            continue
+        if likely_author_line(candidate):
+            authors.extend(split_authors(candidate))
     return authors
 
 
@@ -756,7 +812,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Move recognized research PDFs to Documents/Papers/arxiv or "
-            "Documents/Papers/journal and update manifest.yaml."
+            "Documents/Papers/journal or Documents/Papers/conference and update manifest.yaml."
         )
     )
     parser.add_argument("pdfs", nargs="+", help="PDF file path(s) passed by Folder Actions")
